@@ -154,7 +154,10 @@ namespace Planar_SLAM {
         mpViewer = pViewer;
     }
 
+    //lv:前端追踪主函数1
     cv::Mat Tracking::GrabImageRGBD(const cv::Mat &imRGB, const cv::Mat &imD, const double &timestamp) {
+
+        //输入rgb图像灰度化
         mImRGB = imRGB;
         mImGray = imRGB;
         mImDepth = imD;
@@ -174,11 +177,18 @@ namespace Planar_SLAM {
 
         std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
 
+        //lv:构建Frame对象
+        //传入rgb图,灰度图,深度图,orb提取器,字典,标定内外参等
+        //开启三个临时线程(构造函数结束即销毁)
+        //a)执行orb特征点提取,
+        //b)lsd直线提取, 且利用深度图check直线效果(点云拟合直线?)
+        //c)基于有序点云的plan提取? 不是用pcl,而是用他自研的AHCPlaneFitter来提取?
         mCurrentFrame = Frame(mImRGB, mImGray, mImDepth, timestamp, mpORBextractorLeft, mpORBVocabulary, mK,
                               mDistCoef, mbf, mThDepth, mDepthMapFactor);
         std::chrono::steady_clock::time_point t3 = std::chrono::steady_clock::now();
 
 
+        //lv:前端追踪主函数
         Track();
 
         std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
@@ -202,7 +212,7 @@ namespace Planar_SLAM {
         return mCurrentFrame.mTcw.clone();
     }
 
-
+    // lv:前端追踪主函数2
     void Tracking::Track() {
 
         if (mState == NO_IMAGES_YET) {
@@ -219,7 +229,7 @@ namespace Planar_SLAM {
         // Get Map Mutex -> Map cannot be changed
         unique_lock<mutex> lock(mpMap->mMutexMapUpdate);
 
-        if (mState == NOT_INITIALIZED) {
+        if (mState == NOT_INITIALIZED) {//1-1)lv:初始化分支
             if (mSensor == System::STEREO || mSensor == System::RGBD) {
                 Rotation_cm = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
 
@@ -236,12 +246,12 @@ namespace Planar_SLAM {
 
             if (mState != OK)
                 return;
-        } else {
+        } else {                        //1-2)lv:正常追踪分支
             //Tracking: system is initialized
             bool bOK = false;
             bool bManhattan = false;
             // Initial camera pose estimation using motion model or relocalization (if tracking is lost)
-            if (!mbOnlyTracking) {
+            if (!mbOnlyTracking) {      //mbOnlyTracking默认为false,也不会有其他地方会有效地执行修改它
                 mUpdateMF = true;
                 cv::Mat MF_can = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
                 cv::Mat MF_can_T = cv::Mat::zeros(cv::Size(3, 3), CV_32F);
@@ -268,7 +278,7 @@ namespace Planar_SLAM {
             mCurrentFrame.mpReferenceKF = mpReferenceKF;
 
             // If we have an initial estimation of the camera pose and matching. Track the local map.
-            if (!mbOnlyTracking) {
+            if (!mbOnlyTracking) {      //mbOnlyTracking默认为false,也不会有其他地方会有效地执行修改它
                 if (bOK) {
                     bOK = TrackLocalMap();
                 } else {
@@ -1621,8 +1631,10 @@ namespace Planar_SLAM {
         }
     }
 
+    //lv:点,线,面特征来优化平移量状态
     bool Tracking::TranslationEstimation() {
 
+        //lv:1)特征匹配:点,线,面
         // Compute Bag of Words vector
         mCurrentFrame.ComputeBoW();
 
@@ -1659,7 +1671,7 @@ namespace Planar_SLAM {
         mCurrentFrame.mvpMapPoints = vpMapPointMatches;
         mCurrentFrame.mvpMapLines = vpMapLineMatches;
 
-
+        //2)lv:基于匹配的点,线,面特征约束,作平移量状态估计
         //cout << "translation reference,pose before opti" << mCurrentFrame.mTcw << endl;
         Optimizer::TranslationOptimization(&mCurrentFrame);
         //cout << "translation reference,pose after opti" << mCurrentFrame.mTcw << endl;

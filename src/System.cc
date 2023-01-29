@@ -96,7 +96,7 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     mpLoopCloser->SetLocalMapper(mpLocalMapper);
 }
 
-
+//lv:slam主函数
 cv::Mat System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const double &timestamp)
 {
     if(mSensor!=RGBD)
@@ -108,6 +108,7 @@ cv::Mat System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const doub
     // Check mode change
     {
         unique_lock<mutex> lock(mMutexMode);
+        //mbActivateLocalizationMode 和 DeactivateLocalizationMode系统初始化时为false,以后也不会有除此之外地方修改它们
         if(mbActivateLocalizationMode)
         {
             mpLocalMapper->RequestStop();
@@ -139,6 +140,7 @@ cv::Mat System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const doub
     }
     }
 
+    //lv:前端追踪主函数
     cv::Mat Tcw=mpTracker->GrabImageRGBD(im, depthmap, timestamp);
 
         unique_lock<mutex> lock2(mMutexState);

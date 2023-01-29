@@ -233,7 +233,7 @@ namespace g2o {
             const VertexSE3Expmap *poseVertex = static_cast<const VertexSE3Expmap *>(_vertices[0]);
 
             Isometry3D w2n = poseVertex->estimate();
-            Plane3D localPlane = w2n + Xc;
+            Plane3D localPlane = w2n + Xc;              //只作平面参数d的空间转换!
 
             _error = localPlane.ominus(_measurement);
         }

@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "adc.h": "c",
+        "strstream": "cpp",
+        "chrono": "cpp"
+    }
+}

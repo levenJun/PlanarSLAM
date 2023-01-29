@@ -2991,7 +2991,7 @@ namespace Planar_SLAM {
     }
 
 
-
+    //lv:优化核心函数1
     int Optimizer::TranslationOptimization(Planar_SLAM::Frame *pFrame) {
         g2o::SparseOptimizer optimizer;
         g2o::BlockSolver_6_3::LinearSolverType *linearSolver;
@@ -3006,11 +3006,11 @@ namespace Planar_SLAM {
         int nInitialCorrespondences = 0;
 
         // Set Frame vertex
-        g2o::VertexSE3Expmap *vSE3 = new g2o::VertexSE3Expmap();
-        vSE3->setEstimate(Converter::toSE3Quat(pFrame->mTcw));
+        g2o::VertexSE3Expmap *vSE3 = new g2o::VertexSE3Expmap();    //lv:待估状态,只有单个pose:当前帧pose
+        vSE3->setEstimate(Converter::toSE3Quat(pFrame->mTcw));      //待估状态初值
         vSE3->setId(0);
         vSE3->setFixed(false);
-        optimizer.addVertex(vSE3);
+        optimizer.addVertex(vSE3);                                  //将待估状态添加进优化器中
 
         // Set MapPoint vertices
         const int N = pFrame->N;
@@ -3032,6 +3032,7 @@ namespace Planar_SLAM {
         const float deltaStereo = sqrt(7.815);
 
 
+        //lv:添加点特征约束进优化器中
         {
             unique_lock<mutex> lock(MapPoint::mGlobalMutex);
 
@@ -3049,12 +3050,12 @@ namespace Planar_SLAM {
 
                         g2o::EdgeSE3ProjectXYZOnlyTranslation *e = new g2o::EdgeSE3ProjectXYZOnlyTranslation();
 
-                        e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex *>(optimizer.vertex(0)));
-                        e->setMeasurement(obs);
+                        e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex *>(optimizer.vertex(0)));//约束添加关联的状态pose
+                        e->setMeasurement(obs);                                                             //约束添加对应的观测量
                         const float invSigma2 = pFrame->mvInvLevelSigma2[kpUn.octave];
-                        e->setInformation(Eigen::Matrix2d::Identity() * invSigma2);
+                        e->setInformation(Eigen::Matrix2d::Identity() * invSigma2);                         //约束添加对应的噪声
 
-                        g2o::RobustKernelHuber *rk = new g2o::RobustKernelHuber;
+                        g2o::RobustKernelHuber *rk = new g2o::RobustKernelHuber;                            //约束添加对应的鲁棒核函数
                         e->setRobustKernel(rk);
                         rk->setDelta(deltaMono);
 
@@ -3062,15 +3063,16 @@ namespace Planar_SLAM {
                         e->fy = pFrame->fy;
                         e->cx = pFrame->cx;
                         e->cy = pFrame->cy;
-                        cv::Mat Xw = pMP->GetWorldPos();
-                        cv::Mat Xc = R_cw * Xw;
+                        
+                        cv::Mat Xw = pMP->GetWorldPos();                                                    //获取特征点在世界系下的坐标并添加进约束
+                        cv::Mat Xc = R_cw * Xw;                                                             //lv:这里是预先用旋转量作了旋转!旋转到相机系对齐
 
                         e->Xc[0] = Xc.at<float>(0);
                         e->Xc[1] = Xc.at<float>(1);
                         e->Xc[2] = Xc.at<float>(2);
 
 
-                        optimizer.addEdge(e);
+                        optimizer.addEdge(e);                                                               //将约束添加进整体优化器中
 
                         vpEdgesMono.push_back(e);
                         vnIndexEdgeMono.push_back(i);
@@ -3129,6 +3131,10 @@ namespace Planar_SLAM {
         vector<EdgeLineProjectXYZOnlyTranslation *> vpEdgesLineEp;
         vpEdgesLineEp.reserve(NL);
 
+        //lv:添加线特征进优化器中
+        //lv:单个线段特征:
+        //          观测量是单个二维直线参数
+        //          匹配量是世界系下的读应的唯一线段端点S和E
         {
             unique_lock<mutex> lock(MapLine::mGlobalMutex);
 
@@ -3137,14 +3143,21 @@ namespace Planar_SLAM {
                 if (pML) {
                     pFrame->mvbLineOutlier[i] = false;
 
+                    //lv:线段端点S和端点E尾只有一个观测点!!!(不是一个点,应该是二维平面的直线方程参数!)
                     Eigen::Vector3d line_obs;
                     line_obs = pFrame->mvKeyLineFunctions[i];
 
+                    //lv:线段端点S头观测量约束!
                     EdgeLineProjectXYZOnlyTranslation *els = new EdgeLineProjectXYZOnlyTranslation();
 
-                    els->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex *>(optimizer.vertex(0)));
-                    els->setMeasurement(line_obs);
-                    els->setInformation(Eigen::Matrix3d::Identity() * 1);//*vSteroStartPointInfo[i]);
+                    els->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex *>(optimizer.vertex(0)));  //约束添加关联的状态pose
+                    els->setMeasurement(line_obs);                                                          //约束添加对应的观测量:
+                                                                                                                    //Q:这是什么玩意儿?
+                                                                                                                    //A:这是观测的二维平面上直线参数
+                                                                                                                    //(i)是将图像上 直线的点基于深度图作了3D化?
+                                                                                                                    //(i)但是应该是首尾两个端点,怎么就只有一个点?
+
+                    els->setInformation(Eigen::Matrix3d::Identity() * 1);//*vSteroStartPointInfo[i]);       //约束添加对应的噪声,默认为1
 
                     g2o::RobustKernelHuber *rk_line_s = new g2o::RobustKernelHuber;
                     els->setRobustKernel(rk_line_s);
@@ -3155,8 +3168,8 @@ namespace Planar_SLAM {
                     els->cx = pFrame->cx;
                     els->cy = pFrame->cy;
 
-                    cv::Mat Xw = Converter::toCvVec(pML->mWorldPos.head(3));
-                    cv::Mat Xc = R_cw * Xw;
+                    cv::Mat Xw = Converter::toCvVec(pML->mWorldPos.head(3));                                //获取世界系下对应线段的S头坐标,并添加进约束
+                    cv::Mat Xc = R_cw * Xw;                                                                 //lv:这里是预先用旋转量作了旋转!旋转到相机系对齐
                     els->Xc[0] = Xc.at<float>(0);
                     els->Xc[1] = Xc.at<float>(1);
                     els->Xc[2] = Xc.at<float>(2);
@@ -3166,6 +3179,7 @@ namespace Planar_SLAM {
                     vpEdgesLineSp.push_back(els);
                     vnIndexLineEdgeSp.push_back(i);
 
+                    //lv:线段端点E尾观测量约束!
                     EdgeLineProjectXYZOnlyTranslation *ele = new EdgeLineProjectXYZOnlyTranslation();
 
                     ele->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex *>(optimizer.vertex(0)));
@@ -3196,7 +3210,7 @@ namespace Planar_SLAM {
         }
 
 
-        if (nInitialCorrespondences < 3) {
+        if (nInitialCorrespondences < 3) {//为啥在这里才突然掉转
             return 0;
         }
 
@@ -3236,6 +3250,8 @@ namespace Planar_SLAM {
         double VPplaneChi = Config::Get<double>("Plane.VPChi");
         const float VPdeltaPlane = sqrt(VPplaneChi);
 
+        //lv:添加面特征进优化器中
+        //lv:单个面特征:
         {
             unique_lock<mutex> lock(MapPlane::mGlobalMutex);
             int PNum = 0;
@@ -3247,7 +3263,7 @@ namespace Planar_SLAM {
 
                     g2o::EdgePlaneOnlyTranslation *e = new g2o::EdgePlaneOnlyTranslation();
                     e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex *>(optimizer.vertex(0)));
-                    e->setMeasurement(Converter::toPlane3D(pFrame->mvPlaneCoefficients[i]));
+                    e->setMeasurement(Converter::toPlane3D(pFrame->mvPlaneCoefficients[i]));                //观测值:是直接在当前帧下预先估得的平面参数?
                     //TODO
                     Eigen::Matrix3d Info;
                     Info << angleInfo, 0, 0,
@@ -3255,8 +3271,8 @@ namespace Planar_SLAM {
                             0, 0, disInfo;
                     e->setInformation(Info);
 
-                    Plane3D Xw = Converter::toPlane3D(pMP->GetWorldPos());
-                    Xw.rotateNormal(Converter::toMatrix3d(R_cw));
+                    Plane3D Xw = Converter::toPlane3D(pMP->GetWorldPos());                                  //获取世界系下对应的plane参数,并添加进约束中
+                    Xw.rotateNormal(Converter::toMatrix3d(R_cw));                                           //参考plane提前用旋转对应到当前系下了!
                     e->Xc = Xw;
 
                     g2o::RobustKernelHuber *rk = new g2o::RobustKernelHuber;
